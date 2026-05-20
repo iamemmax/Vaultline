@@ -7,24 +7,35 @@ import { useEffect, useState, type ReactNode } from "react";
  * gate, components could fire requests at /api/* before the worker has
  * registered → fall-through to the real network and 404.
  *
- * In production builds we skip MSW entirely. Setting
- * NEXT_PUBLIC_MOCK_API=false also disables it for testing real APIs in dev.
+ * This app has no real backend, so MSW runs in production too. The
+ * NEXT_PUBLIC_MOCK_API env var is the kill-switch: set it to "false" once
+ * a real API is wired up. Anything else (or unset) keeps MSW on.
  */
 export function MockProvider({ children }: { children: ReactNode }) {
-  const enabled =
-    process.env.NODE_ENV === "development" &&
-    process.env.NEXT_PUBLIC_MOCK_API !== "false";
+  const enabled = process.env.NEXT_PUBLIC_MOCK_API !== "false";
 
   const [ready, setReady] = useState(!enabled);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
 
     (async () => {
-      const { startMockWorker } = await import("@/mocks/browser");
-      await startMockWorker();
-      if (!cancelled) setReady(true);
+      try {
+        const { startMockWorker } = await import("@/mocks/browser");
+        await startMockWorker();
+        if (!cancelled) setReady(true);
+      } catch (e) {
+        // Don't trap the UI on init failure — render the app so the user can
+        // at least see what's broken, and surface the reason loudly.
+        // eslint-disable-next-line no-console
+        console.error("[MSW] failed to start", e);
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : String(e));
+          setReady(true);
+        }
+      }
     })();
 
     return () => {
@@ -44,5 +55,14 @@ export function MockProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {error ? (
+        <div className="fixed inset-x-0 top-0 z-100 bg-destructive px-4 py-2 text-center text-xs text-destructive-foreground">
+          Mock API failed to start: {error}. Open DevTools → Application → Service Workers for details.
+        </div>
+      ) : null}
+      {children}
+    </>
+  );
 }
