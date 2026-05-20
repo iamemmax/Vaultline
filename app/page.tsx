@@ -816,7 +816,6 @@ function Footer() {
           style={{ fontFamily: MONO }}
         >
           <p>© {new Date().getFullYear()} Vaultline Financial</p>
-          <p>Demo build · mock data only · Next.js 15 &middot; Tailwind v4</p>
         </div>
       </div>
     </footer>
