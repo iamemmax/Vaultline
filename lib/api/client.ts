@@ -1,9 +1,17 @@
+import { getResponse } from "msw";
+
+import { handlers } from "@/mocks/handlers";
 import { ApiError, type ApiErrorPayload } from "@/types";
 
 /**
- * The ONLY place that talks to the network. Swapping from MSW to a real
- * backend is just changing NEXT_PUBLIC_API_BASE_URL — every URL, header,
- * and error shape stays identical.
+ * The ONLY place that talks to the "network". This app has no real backend
+ * — every request is dispatched in-process against the MSW handlers via
+ * `getResponse(handlers, request)`. No Service Worker, no /api/* server
+ * routes, identical behavior in dev and production.
+ *
+ * To wire up a real backend later: replace the `getResponse` call below
+ * with `fetch(buildUrl(path, query), init)` and you're done. URLs, headers,
+ * and error shapes stay identical.
  */
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
@@ -51,6 +59,18 @@ function buildUrl(path: string, query?: RequestOptions["query"]) {
   return qs ? `${url}?${qs}` : url;
 }
 
+/**
+ * Absolute URL is required to construct a `Request`. In the browser we use
+ * the current origin; on the server (build-time prerender) we use a stable
+ * placeholder — MSW handlers only care about the path + query.
+ */
+function absoluteUrl(path: string): string {
+  if (path.startsWith("http")) return path;
+  const origin =
+    typeof window !== "undefined" ? window.location.origin : "http://local.mock";
+  return `${origin}${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
 export async function apiFetch<T>(
   path: string,
   opts: RequestOptions = {},
@@ -66,13 +86,20 @@ export async function apiFetch<T>(
     if (token) headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(buildUrl(path, query), {
+  const request = new Request(absoluteUrl(buildUrl(path, query)), {
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
     signal,
-    credentials: "include",
   });
+
+  const mocked = await getResponse(handlers, request);
+  const response =
+    mocked ??
+    new Response(
+      JSON.stringify({ message: "No handler for this request", code: "NO_HANDLER" }),
+      { status: 404, headers: { "Content-Type": "application/json" } },
+    );
 
   // 204 No Content
   if (response.status === 204) return undefined as T;
