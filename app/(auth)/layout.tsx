@@ -210,7 +210,6 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             <span>FDIC insured &middot; up to $250,000</span>
           </div>
         </div>
-
         {/* keyframes for ticker */}
         <style>{`
           @keyframes vl-ticker {
